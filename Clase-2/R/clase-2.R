@@ -1,0 +1,164 @@
+#Instalacion de paquetes
+
+install.packages(c("here","readr","dplyr","ggplot2"))
+
+#usar paquetes
+library(here)
+library(readr)
+library(dplyr)
+
+# Ruta al CSV dentro del proyecto
+archivo_csv <-here::here(
+  "data_raw","personas_encuesta_sintetica_2026_10.csv"
+)
+
+file.exists(archivo_csv)
+
+here::here()
+getwd()
+
+#Importacion controlada el CSV
+datos<-readr::read_csv(
+  file=archivo_csv,
+  col_types = readr::cols(.default = readr::col_character()),
+  na="NA",
+  trim_ws = FALSE,
+  locale = readr::locale(encoding = "UTF-8"),
+  show_col_types = FALSE
+)
+
+dim(datos)
+nrow(datos)
+ncol(datos)
+names(datos)
+head(datos,10)
+tail(datos,5)
+srt(datos)
+
+dplyr::glimpse(datos)
+
+# frecuencias sencillas
+head(datos$provincia,10)
+
+table(datos$area, useNA = "ifany")
+
+## actividad incluir vacíos
+
+
+## Importacion automatica
+datos_auto<-readr::read_csv(
+  archivo_csv,
+  show_col_types = FALSE
+)
+
+dplyr::glimpse(datos)
+dplyr::glimpse(datos_auto)
+
+
+diccionario<-readr::read_csv(
+  here::here("diccionario","diccionario_variables.csv"),
+  col_types = readr::cols(.default = readr::col_character()),
+  na="NA",
+  show_col_types = FALSE
+)
+
+
+head(diccionario,8)
+names(diccionario)
+
+
+## COMPARAR LAS COLUMNAS/VARIABLES VS DICCIONARIO
+columnas_observadas <-names(datos)
+columas_esperadas<-diccionario$variable
+
+#verificar las columnas del diccionario vs dataset
+faltan_columnas<-setdiff(columas_esperadas,columnas_observadas)
+
+faltan_columnas
+
+columnas_extras<-setdiff(columnas_observadas,columas_esperadas)
+columnas_extras
+
+orden_coincide<-identical(columnas_observadas,columas_esperadas)
+orden_coincide
+
+
+### CREAR TABLA ESTRUCTURAL
+
+# vapply recorre las columnas y recupera la clase importada.
+# Luego unimos los resultados con las declaraciones del diccionario.
+
+tabla_estructura <- tibble::tibble(
+  variable = names(datos),
+  clase_importada = vapply(
+    datos,
+    function(x) class(x)[1],
+    character(1)
+  )
+) %>%
+  dplyr::left_join(
+    diccionario %>%
+      dplyr::select(variable, tipo_esperado, obligatoria, control_exploratorio),
+    by = "variable"
+  )
+
+print(tabla_estructura, n = nrow(tabla_estructura))
+
+
+# Transformación solo en un vector auxiliar; el CSV queda intacto.
+edad_num <- suppressWarnings(as.integer(datos$edad)) # as.numeric()
+
+# Comparar textos de entrada con resultado convertido.
+comparacion_edad <- datos %>%
+  dplyr::transmute(
+    id_persona,
+    edad_original = edad,
+    edad_convertida = suppressWarnings(as.integer(edad))
+  )
+
+head(comparacion_edad, 12)
+
+# Identificamos registros cuyo valor está informado, no se ha
+# declarado marcador especial y aun así no se convierte.
+problemas_edad <- datos %>%
+  dplyr::mutate(
+    fila_csv = dplyr::row_number() + 1L,
+    edad_num = suppressWarnings(as.integer(edad)),
+    marcador = !is.na(edad) &
+      toupper(trimws(edad)) %in% c("N/D", "SIN DATO")
+  ) %>%
+  dplyr::filter(
+    !is.na(edad),
+    trimws(edad) != "",
+    !marcador,
+    is.na(edad_num)
+  ) %>%
+  dplyr::select(fila_csv, id_persona, edad, edad_num)
+
+print(problemas_edad, n = 20)
+
+
+## SOLUCIÓN
+
+# Convertir ingreso mensual a numérico
+ingreso_num <- suppressWarnings(
+  as.numeric(datos$ingreso_mensual_usd)
+)
+
+# Revisar los primeros 12 valores
+head(ingreso_num, 12)
+
+# Comprobar el tipo de dato
+class(ingreso_num)
+
+# Comparar valores originales y convertidos
+comparacion_ingreso <- datos %>%
+  dplyr::transmute(
+    id_persona,
+    ingreso_original = ingreso_mensual_usd,
+    ingreso_convertido = suppressWarnings(
+      as.numeric(ingreso_mensual_usd)
+    )
+  )
+
+print(comparacion_ingreso, n = 20)
